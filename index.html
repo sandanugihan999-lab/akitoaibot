@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="si">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aki to - Team Chat</title>
+<style>
+  :root { --bg:#000; --fg:#fff; --mid:#1a1a1a; --line:#333; --dim:#999; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Noto Sans Sinhala", "Iskoola Pota", system-ui, sans-serif;
+    display: flex; flex-direction: column; max-width: 760px; margin: 0 auto;
+  }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header h1 small { color: var(--dim); font-weight: normal; margin-left: 8px; font-size: 13px; }
+  header button { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+  header button:hover { color: var(--fg); border-color: var(--fg); }
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; flex-direction: column; max-width: 85%; }
+  .row.me { align-self: flex-end; align-items: flex-end; }
+  .row.other { align-self: flex-start; align-items: flex-start; }
+  .who { font-size: 12px; color: var(--dim); margin: 0 6px 3px; }
+  .bubble { padding: 9px 13px; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
+  .me .bubble { background: var(--fg); color: var(--bg); border-bottom-right-radius: 4px; }
+  .other .bubble { background: var(--mid); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .bot .bubble { border: 1px solid var(--fg); }
+  .bot .who { color: var(--fg); font-weight: bold; }
+  #status { min-height: 22px; padding: 0 18px; font-size: 13px; color: var(--dim); font-style: italic; }
+  #hint { font-size: 12px; color: var(--dim); padding: 0 16px 8px; }
+  form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  textarea, input.txt {
+    flex: 1; resize: none; background: var(--mid); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px; font: inherit; max-height: 140px; outline: none; width: 100%;
+  }
+  textarea:focus, input.txt:focus { border-color: var(--fg); }
+  button.send { background: var(--fg); color: var(--bg); border: none; border-radius: 12px; padding: 0 18px; font: inherit; font-weight: bold; cursor: pointer; }
+  button.send:disabled { opacity: .4; }
+  #login { display: none; margin: auto; padding: 20px; width: 100%; max-width: 420px; }
+  #login h2 { font-size: 26px; margin: 0 0 4px; text-align: center; }
+  #login > p { color: var(--dim); text-align: center; margin: 0 0 16px; }
+  #login label { display: block; font-size: 13px; color: var(--dim); margin: 10px 0 4px; }
+  #login input { display: block; }
+  #login .err { color: var(--fg); font-style: italic; min-height: 20px; margin-top: 10px; }
+  #login button { width: 100%; padding: 13px; margin-top: 8px; }
+  #login small { color: var(--dim); display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>
+  <h1>A.K.i. Team<small>Aki to · group chat</small></h1>
+  <button id="settings" type="button">Settings</button>
+</header>
+
+<div id="login">
+  <h2>Aki to</h2>
+  <p>Team chat එකට ඇතුල් වෙන්න</p>
+
+  <label>ඔයාගේ නම</label>
+  <input class="txt" id="nameIn" maxlength="24" autocomplete="off">
+
+  <label>Team room code (හැමෝටම එකම එක)</label>
+  <input class="txt" id="roomIn" autocomplete="off" placeholder="උදා: aki-team-7391">
+  <small>මේක password එකක් වගේ. දිග, අනුමාන කරන්න අමාරු එකක් දාන්න.</small>
+
+  <label>Firebase Database URL</label>
+  <input class="txt" id="dbIn" autocomplete="off" placeholder="https://xxxx-default-rtdb.firebaseio.com">
+
+  <label>Gemini API key (@aki පාවිච්චි කරන්න, හිස්ව තිබුනත් chat කරන්න පුළුවන්)</label>
+  <input class="txt" id="keyIn" type="password" autocomplete="off">
+  <small>key එක save වෙන්නේ ඔයාගේ browser එකේ විතරයි.</small>
+
+  <div class="err" id="loginErr"></div>
+  <button class="send" id="loginBtn" type="button">ඇතුල් වෙන්න</button>
+</div>
+
+<div id="chat"></div>
+<div id="status"></div>
+<div id="hint">Aki to ට කතා කරන්න <b>@aki</b> කියලා ලියන්න. අනිත් වෙලාවට ඔයාලා තමන්ගෙ අතර කතා කරන්න.</div>
+<form id="form">
+  <textarea id="input" rows="1" placeholder="Message එකක් ලියන්න..."></textarea>
+  <button class="send" id="send" type="submit">යවන්න</button>
+</form>
+
+<script>
+// ===== Team lead: මෙතනට Firebase URL එක දාලා file එක team එකට දුන්නොත් අනිත් අයට ඒක ආයෙ ටයිප් කරන්න ඕන නෑ =====
+const DEFAULT_DB_URL = "";
+// ==========================================================================================================
+
+const MODEL = "gemini-2.5-flash";
+const SYSTEM_PROMPT = `You are "Aki to" (අකී ටො), a friendly and smart AI assistant living inside a team group chat for the A.K.i. Team.
+- Several people chat here. Each line of the transcript looks like "Name: message". Reply to the person who just called you, and use their name naturally if it helps.
+- Reply in the language that person used. If they write Sinhala (script or romanized "Singlish"), reply in Sinhala script. If English, reply in English.
+- Be clear, simple and helpful. Keep answers short unless asked for detail.
+- If you are not sure about something, say so honestly instead of guessing.
+- Use web search for recent or changing information.`;
+
+const $ = (id) => document.getElementById(id);
+const chat = $("chat"), form = $("form"), input = $("input"), sendBtn = $("send"), statusEl = $("status");
+const MENTION = /(^|\s)@aki\b|(^|\s)@?aki\s*to\b|අකී\s*ටො/i;
+
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch (_) { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+};
+
+let cfg = {
+  name: store.get("aki_name"),
+  room: store.get("aki_room"),
+  db: store.get("aki_db") || DEFAULT_DB_URL,
+  key: store.get("aki_key"),
+};
+let cid = store.get("aki_cid");
+if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set("aki_cid", cid); }
+
+const msgs = new Map(); // firebase key -> message
+let es = null;
+
+function setStatus(t) { statusEl.textContent = t || ""; }
+
+function render() {
+  const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+  const sorted = [...msgs.entries()].sort((a, b) => (a[1].time - b[1].time) || (a[0] < b[0] ? -1 : 1));
+  chat.innerHTML = "";
+  let last = 0;
+  for (const [, m] of sorted) {
+    const row = document.createElement("div");
+    const mine = m.cid === cid && !m.bot;
+    row.className = "row " + (mine ? "me" : "other") + (m.bot ? " bot" : "");
+    const who = document.createElement("div");
+    who.className = "who";
+    who.textContent = m.name + " · " + new Date(m.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const b = document.createElement("div");
+    b.className = "bubble";
+    b.textContent = m.text;
+    row.append(who, b);
+    chat.appendChild(row);
+    last = m.cid === cid ? 1 : 0;
+  }
+  if (nearBottom || last) chat.scrollTop = chat.scrollHeight;
+}
+
+function ingest(key, val) {
+  if (!val || typeof val !== "object" || typeof val.text !== "string") return;
+  msgs.set(key, {
+    name: String(val.name || "?").slice(0, 24),
+    text: String(val.text).slice(0, 8000),
+    bot: !!val.bot,
+    cid: val.cid || "",
+    time: Number(val.time) || 0,
+  });
+}
+
+function handleEvent(type, raw) {
+  let d;
+  try { d = JSON.parse(raw); } catch (_) { return; }
+  if (!d) return;
+  const { path, data } = d;
+  if (path === "/") {
+    if (data && typeof data === "object") for (const k of Object.keys(data)) ingest(k, data[k]);
+  } else if (typeof path === "string") {
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length === 1) ingest(parts[0], data);
+  }
+  render();
+}
+
+function base() { return cfg.db.replace(/\/+$/, "") + "/rooms/" + encodeURIComponent(cfg.room) + "/messages"; }
+function query() { return "?orderBy=%22%24key%22&limitToLast=150"; }
+
+function connect() {
+  if (es) es.close();
+  msgs.clear(); chat.innerHTML = "";
+  setStatus("සම්බන්ධ වෙනවා...");
+  es = new EventSource(base() + ".json" + query());
+  es.addEventListener("put", (e) => { handleEvent("put", e.data); setStatus(""); });
+  es.addEventListener("patch", (e) => handleEvent("patch", e.data));
+  es.addEventListener("auth_revoked", () => setStatus("Database rules වලින් අවහිර කරලා. README බලන්න."));
+  es.onerror = () => setStatus("සම්බන්ධතාවය බිඳුණා, ආයෙත් try කරනවා...");
+}
+
+async function verify() {
+  // DB එකට ළඟා වෙන්න පුළුවන්ද සහ rules හරිද කියලා බලන්න
+  const r = await fetch(base() + ".json?shallow=true");
+  if (r.status === 401 || r.status === 403) throw new Error("Database එකට ඉඩ නෑ. Rules (Firebase console එකේ) හරියට දාලාද බලන්න.");
+  if (!r.ok) throw new Error("Database URL එක වැරදියි වගේ.");
+}
+
+function show(screen) {
+  const login = screen === "login";
+  $("login").style.display = login ? "block" : "none";
+  for (const el of [chat, statusEl, $("hint")]) el.style.display = login ? "none" : "";
+  form.style.display = login ? "none" : "flex";
+}
+
+async function start() {
+  try {
+    await verify();
+  } catch (e) {
+    $("loginErr").textContent = e.message && e.message.startsWith("Database") ? e.message : "Database එකට සම්බන්ධ වෙන්න බැරි වුණා. URL එක පරීක්ෂා කරන්න.";
+    show("login");
+    return false;
+  }
+  show("chat");
+  connect();
+  input.focus();
+  return true;
+}
+
+$("loginBtn").addEventListener("click", async () => {
+  const name = $("nameIn").value.trim();
+  const room = $("roomIn").value.trim();
+  let db = $("dbIn").value.trim();
+  if (!name) return ($("loginErr").textContent = "නමක් ඕන.");
+  if (room.length < 4) return ($("loginErr").textContent = "Room code එක අකුරු 4කට වඩා දිග වෙන්න ඕන.");
+  if (!/^https:\/\/[^\s/]+\.(firebaseio\.com|firebasedatabase\.app)/i.test(db)) return ($("loginErr").textContent = "Firebase URL එක https://....firebaseio.com වගේ වෙන්න ඕන.");
+  db = db.replace(/\/+$/, "");
+  cfg = { name, room, db, key: $("keyIn").value.trim() };
+  $("loginErr").textContent = "";
+  if (await start()) {
+    store.set("aki_name", cfg.name); store.set("aki_room", cfg.room);
+    store.set("aki_db", cfg.db); store.set("aki_key", cfg.key);
+  }
+});
+$("settings").addEventListener("click", () => {
+  if (es) es.close();
+  $("nameIn").value = cfg.name; $("roomIn").value = cfg.room;
+  $("dbIn").value = cfg.db; $("keyIn").value = cfg.key; $("loginErr").textContent = "";
+  show("login");
+});
+
+async function post(name, text, bot) {
+  const r = await fetch(base() + ".json", {
+    method: "POST",
+    body: JSON.stringify({ name, text, bot: !!bot, cid, time: Date.now() }),
+  });
+  if (!r.ok) throw new Error("send failed");
+}
+
+async function callGemini(transcript, useSearch) {
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: transcript }] }],
+  };
+  if (useSearch) body.tools = [{ google_search: {} }];
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.key }, body: JSON.stringify(body) }
+  );
+  const data = await res.json();
+  if (!res.ok) { const e = new Error(data?.error?.message || "Gemini error"); e.status = res.status; throw e; }
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map((p) => p.text || "").join("").trim();
+  return text || "සමාවෙන්න, පිළිතුරක් හදාගන්න බැරි වුණා. ආයෙත් අහන්න.";
+}
+
+async function askAki() {
+  if (!cfg.key) { setStatus("@aki පාවිච්චි කරන්න Settings එකේ Gemini API key එකක් දාන්න."); return; }
+  setStatus("Aki to ලියනවා...");
+  try {
+    const recent = [...msgs.values()].sort((a, b) => a.time - b.time).slice(-25);
+    const transcript = "Group chat so far (oldest first):\n" +
+      recent.map((m) => `${m.name}: ${m.text}`).join("\n") +
+      `\n\nNow reply as Aki to to ${cfg.name}'s latest message.`;
+    let reply;
+    try { reply = await callGemini(transcript, true); }
+    catch (e) { if ([400, 403, 429].includes(e.status)) throw e; reply = await callGemini(transcript, false); }
+    await post("Aki to", reply, true);
+    setStatus("");
+  } catch (e) {
+    let t = "Aki to ට උත්තර දෙන්න බැරි වුණා: " + e.message;
+    if (e.status === 429) t = "Gemini ඉල්ලීම් වැඩියි (free limit එක). විනාඩියක් ඉඳලා ආයෙත් අහන්න.";
+    if (e.status === 400 || e.status === 403) t = "Gemini API key එකේ ප්‍රශ්නයක් වගේ. Settings එකෙන් පරීක්ෂා කරන්න.";
+    setStatus(t);
+  }
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = ""; input.style.height = "auto";
+  sendBtn.disabled = true;
+  try {
+    await post(cfg.name, text, false);
+    if (MENTION.test(text)) askAki();
+  } catch (_) {
+    input.value = text;
+    setStatus("යවන්න බැරි වුණා. Internet එක බලලා ආයෙත් try කරන්න.");
+  }
+  sendBtn.disabled = false;
+  input.focus();
+});
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+});
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 140) + "px";
+});
+
+$("nameIn").value = cfg.name; $("roomIn").value = cfg.room; $("dbIn").value = cfg.db; $("keyIn").value = cfg.key;
+if (cfg.name && cfg.room && cfg.db) start(); else show("login");
+</script>
+</body>
+</html>
